@@ -1,0 +1,1 @@
+This project aims to develop a real-time embedded system using FreeRTOS on ESP32 boards. The system reads values from temperature, humidity, and CO2 sensors and displays them when a person is detected using an ultrasonic sensor. The project involves several key techniques and components, including UART, SPI, and I2C peripherals, and real-time task scheduling.
