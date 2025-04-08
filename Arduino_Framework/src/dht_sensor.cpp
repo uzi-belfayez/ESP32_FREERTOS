@@ -104,3 +104,11 @@ bool getTemperature() {
     Serial.println(" T:" + String(newValues.temperature) + " H:" + String(newValues.humidity) + " I:" + String(heatIndex) + " D:" + String(dewPoint) + " " + comfortStatus);
     return true;
 }
+
+void producteur_hum(){
+
+}
+
+void producteur_temp(){
+    
+}
