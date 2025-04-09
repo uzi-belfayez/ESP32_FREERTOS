@@ -22,7 +22,7 @@ DHTesp dht;
 
 void setup_dht() {
   Serial.begin(115200);
-  dht.setup(17, DHTesp::DHT22); // Set your DHT pin and sensor type
+  dht.setup(17, DHTesp::DHT22); 
 }
 
 SSD1306Wire display(0x3c, SDA, SCL);
@@ -66,13 +66,14 @@ void vProducteurTemperature(void *pvParameters)
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
+        printf("ProducteurTemperature produced %f \n", temp);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
     }
 }
 
-void vProducteurhumidite(void *pvParameters)
+void vProducteurHumidite(void *pvParameters)
 {
-    const char *pcTaskName = "ProducteurTemperature";
+    const char *pcTaskName = "ProducteurHumidite";
     int valueToSend;
     BaseType_t status;
     UBaseType_t uxPriority;
@@ -99,10 +100,53 @@ void vProducteurhumidite(void *pvParameters)
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
+        printf("ProducteurHumidité produced %f \n", humidite);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
     }
 }
 
+
+void vConsomateur(void *pvParameters)
+{
+  const char *pcTaskName = "Consomateur";
+  UBaseType_t uxPriority;
+  uxPriority = uxTaskPriorityGet(NULL);
+  int i = 0;
+  mesure_t current_mesure ;
+  TickType_t xLastWakeTime;
+  xLastWakeTime = xTaskGetTickCount();
+  for (;;)
+  {   
+      
+      xSemaphoreTake(s2, portMAX_DELAY); 
+      // Consume value
+      current_mesure = tab_mesure[i] ; 
+      i = (i + 1) % TAILLE_MAX;
+      xSemaphoreGive(s1); 
+      if (current_mesure.type_capteur == 'H') {
+        humidite = current_mesure.mesure ; 
+        printf("Le consomateur a consomé %f de type Humidité \n ",humidite);
+      }
+      else if (current_mesure.type_capteur == 'T'){
+        temp = current_mesure.mesure ;
+        printf("Le consomateur a consomé %f de type temp \n ",temp);
+
+      }
+      // else if (current_mesure.type_capteur == 'C'){
+      //   taux_co2 = current_mesure.mesure ; 
+      //   printf("Le consomateur a consomé %d de type C02 \n ",taux_co2);
+      // }
+
+      // if (interruptOccurred){
+      // display.clear();
+      // update_screen();
+      // }
+
+      vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
+  
+  }
+  vTaskDelete(NULL); 
+}
 
 
 
@@ -147,7 +191,18 @@ void update_screen() {
 
 void setup() {
   setup_dht();
+  
+  display.init();
+  display.flipScreenVertically();
+  display.setFont(ArialMT_Plain_10);
 
+  s1 = xSemaphoreCreateCounting( TAILLE_MAX, TAILLE_MAX );
+  s2 = xSemaphoreCreateCounting( TAILLE_MAX, 0 );
+  mutex = xSemaphoreCreateMutex();
+
+  xTaskCreatePinnedToCore( vProducteurTemperature, "ProducteurTemp", 10000, NULL, 1, NULL , 0 ); 
+  xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );
+  xTaskCreatePinnedToCore( vConsomateur, "Consomateur", 10000, NULL, 1 ,NULL ,  0 );
 
 }
 
