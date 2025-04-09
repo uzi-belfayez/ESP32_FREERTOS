@@ -36,6 +36,27 @@ int table_pointer = 0 ;
 
 float temp,humidite ;
 
+void update_screen_v1() {
+  display.clear(); // Clear previous display
+
+  display.setFont(ArialMT_Plain_16);
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+
+  char tempStr[10];
+  char humidityStr[10];
+
+  // Format temperature and humidity
+  dtostrf(temp, 4, 1, tempStr);
+  dtostrf(humidite, 4, 1, humidityStr);
+  strcat(tempStr, "°C");
+  strcat(humidityStr, "%");
+
+  display.drawString(64, 10, "Temp: " + String(tempStr));
+  display.drawString(64, 30, "Hum: " + String(humidityStr));
+
+  display.display(); // Send buffer to screen
+}
+
 
 void vProducteurTemperature(void *pvParameters)
 {
@@ -126,11 +147,12 @@ void vConsomateur(void *pvParameters)
       if (current_mesure.type_capteur == 'H') {
         humidite = current_mesure.mesure ; 
         printf("Le consomateur a consomé %f de type Humidité \n ",humidite);
+        update_screen_v1();
       }
       else if (current_mesure.type_capteur == 'T'){
         temp = current_mesure.mesure ;
         printf("Le consomateur a consomé %f de type temp \n ",temp);
-
+        update_screen_v1();
       }
       // else if (current_mesure.type_capteur == 'C'){
       //   taux_co2 = current_mesure.mesure ; 
