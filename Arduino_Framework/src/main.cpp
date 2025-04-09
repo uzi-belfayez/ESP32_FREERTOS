@@ -4,11 +4,16 @@
 #include "DHTesp.h"
 #include <Ticker.h>
 #include <Arduino.h>
+#include <HardwareSerial.h>
 
 
 #define SDA GPIO_NUM_5
 #define SCL GPIO_NUM_4
 #define TAILLE_MAX 30
+
+#define TXESP_PIN 1
+#define RXESP_PIN 3
+#define UART_ESP UART_NUM_0
 
 
 typedef struct {
@@ -87,7 +92,7 @@ void vProducteurTemperature(void *pvParameters)
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
-        printf("ProducteurTemperature produced %f \n", temp);
+        //printf("ProducteurTemperature produced %f \n", temp);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
     }
 }
@@ -121,7 +126,7 @@ void vProducteurHumidite(void *pvParameters)
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
-        printf("ProducteurHumidité produced %f \n", humidite);
+        //printf("ProducteurHumidité produced %f \n", humidite);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
     }
 }
@@ -146,12 +151,12 @@ void vConsomateur(void *pvParameters)
       xSemaphoreGive(s1); 
       if (current_mesure.type_capteur == 'H') {
         humidite = current_mesure.mesure ; 
-        printf("Le consomateur a consomé %f de type Humidité \n ",humidite);
+        //printf("Le consomateur a consomé %f de type Humidité \n ",humidite);
         update_screen_v1();
       }
       else if (current_mesure.type_capteur == 'T'){
         temp = current_mesure.mesure ;
-        printf("Le consomateur a consomé %f de type temp \n ",temp);
+        //printf("Le consomateur a consomé %f de type temp \n ",temp);
         update_screen_v1();
       }
       // else if (current_mesure.type_capteur == 'C'){
@@ -170,6 +175,27 @@ void vConsomateur(void *pvParameters)
   vTaskDelete(NULL); 
 }
 
+
+void vUARTReceiver(void *pvParameters) {
+  TickType_t xLastWakeTime;
+  xLastWakeTime = xTaskGetTickCount();
+  char incomingByte;
+
+  for (;;) {
+    if (Serial.available() > 0) {
+      incomingByte = Serial.read();
+      Serial.printf("UART received: %c\n", incomingByte);
+
+      // Example: if you want to trigger something based on UART input
+      // if (incomingByte == 'u') {
+      //   update_screen();  // manually update OLED screen
+      // }
+    }
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
+  }
+
+  vTaskDelete(NULL);
+}
 
 
 void update_screen() {
@@ -213,6 +239,8 @@ void update_screen() {
 
 void setup() {
   setup_dht();
+
+  Serial1.begin(9600);
   
   display.init();
   display.flipScreenVertically();
@@ -225,6 +253,7 @@ void setup() {
   xTaskCreatePinnedToCore( vProducteurTemperature, "ProducteurTemp", 10000, NULL, 1, NULL , 0 ); 
   xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );
   xTaskCreatePinnedToCore( vConsomateur, "Consomateur", 10000, NULL, 1 ,NULL ,  0 );
+  xTaskCreatePinnedToCore(vUARTReceiver, "UARTReceiver", 4096, NULL, 1, NULL, 0);
 
 }
 

@@ -6,6 +6,7 @@
 #include <rom/ets_sys.h>
 #include "driver/uart.h"
 #include "esp_log.h"
+#include <string.h>
 
 
 #define TRIGGER_PIN GPIO_NUM_33
@@ -17,6 +18,10 @@
 #define RXD_PIN 16
 #define UART_NUM UART_NUM_2
 #define BUF_SIZE (128)
+
+#define TXESP_PIN 1
+#define RXESP_PIN 3
+#define UART_ESP UART_NUM_0
 
 volatile int64_t start_time = 0;
 volatile int64_t end_time = 0;
@@ -67,9 +72,31 @@ void hcsr04_task(void *pvParameter) {
 
 
 
+// void co2_task(void *pvParameters) {
+//     uint8_t request[] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79}; 
+//     uint8_t response[9];
+
+//     while (1) {
+//         uart_write_bytes(UART_NUM, (const char*)request, sizeof(request)); 
+//         vTaskDelay(pdMS_TO_TICKS(100)); 
+
+//         int len = uart_read_bytes(UART_NUM, response, sizeof(response), pdMS_TO_TICKS(200));
+//         if (len == 9 && response[0] == 0xFF && response[1] == 0x86) {
+//             int co2_ppm = (response[2] << 8) | response[3]; // Extract CO₂ value
+//             ESP_LOGI(TAG, "CO₂ Concentration: %d ppm", co2_ppm);
+//         } else {
+//             ESP_LOGW(TAG, "Invalid response");
+//         }
+
+//         vTaskDelay(pdMS_TO_TICKS(4000)); // Wait 4 seconds before next reading
+//     }
+// }
+
+
 void co2_task(void *pvParameters) {
     uint8_t request[] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79}; 
     uint8_t response[9];
+    char send_buffer[32];  // Buffer to format the string
 
     while (1) {
         uart_write_bytes(UART_NUM, (const char*)request, sizeof(request)); 
@@ -79,6 +106,10 @@ void co2_task(void *pvParameters) {
         if (len == 9 && response[0] == 0xFF && response[1] == 0x86) {
             int co2_ppm = (response[2] << 8) | response[3]; // Extract CO₂ value
             ESP_LOGI(TAG, "CO₂ Concentration: %d ppm", co2_ppm);
+
+            // Send over UART_ESP
+            snprintf(send_buffer, sizeof(send_buffer), "CO2:%d ppm\r\n", co2_ppm);
+            uart_write_bytes(UART_ESP, send_buffer, strlen(send_buffer));
         } else {
             ESP_LOGW(TAG, "Invalid response");
         }
@@ -112,7 +143,7 @@ void app_main() {
     xTaskCreate(hcsr04_task, "hcsr04_task", 2048, NULL, 5, NULL);
 
     // ---------------------------------------------- CO2 SENSOR CONFIG -----------------------------------------------
-    // UART configuration
+    // UART configuration for the sensor 
     const uart_config_t uart_config = {
         .baud_rate = 9600,
         .data_bits = UART_DATA_8_BITS,
@@ -126,8 +157,25 @@ void app_main() {
     uart_param_config(UART_NUM, &uart_config);
     uart_set_pin(UART_NUM, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
+
+
+    // ---------------------------------------------- SENDING DATA CONFIG -----------------------------------------------
+
+    const uart_config_t uart_config_esp = {
+        .baud_rate = 9600,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_APB,
+    };
+
+    uart_driver_install(UART_ESP, BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_param_config(UART_ESP, &uart_config_esp);
+    uart_set_pin(UART_ESP, TXESP_PIN, RXESP_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+
+
     // Create FreeRTOS Task for CO2 Sensor
     xTaskCreate(co2_task, "co2_task", 2048, NULL, 5, NULL);
-
 
 }
