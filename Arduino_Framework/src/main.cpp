@@ -11,9 +11,11 @@
 #define SCL GPIO_NUM_4
 #define TAILLE_MAX 30
 
-#define TXESP_PIN 1
-#define RXESP_PIN 3
-#define UART_ESP UART_NUM_0
+#define TXESP_PIN 17 //1
+#define RXESP_PIN 16 //3
+
+HardwareSerial SerialSensor(2);
+
 
 
 typedef struct {
@@ -21,13 +23,13 @@ typedef struct {
   char type_capteur;
 } mesure_t;
 
-int dhtPin = 17;
+int dhtPin = 18;
 
 DHTesp dht;
 
 void setup_dht() {
   Serial.begin(115200);
-  dht.setup(17, DHTesp::DHT22); 
+  dht.setup(dhtPin, DHTesp::DHT22); 
 }
 
 SSD1306Wire display(0x3c, SDA, SCL);
@@ -175,6 +177,7 @@ void vConsomateur(void *pvParameters)
   vTaskDelete(NULL); 
 }
 
+String input = "";
 
 void vUARTReceiver(void *pvParameters) {
   TickType_t xLastWakeTime;
@@ -182,15 +185,16 @@ void vUARTReceiver(void *pvParameters) {
   char incomingByte;
 
   for (;;) {
-    if (Serial.available() > 0) {
-      incomingByte = Serial.read();
-      Serial.printf("UART received: %c\n", incomingByte);
+    if (SerialSensor.available()) {
+      input = SerialSensor.readStringUntil('\n');
+      Serial.println("Received: " + input);
+      // Parse and process input
+    }
 
       // Example: if you want to trigger something based on UART input
       // if (incomingByte == 'u') {
       //   update_screen();  // manually update OLED screen
       // }
-    }
     vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
   }
 
@@ -235,12 +239,10 @@ void update_screen() {
 
 
 
-
-
 void setup() {
   setup_dht();
 
-  Serial1.begin(9600);
+  SerialSensor.begin(9600, SERIAL_8N1, RXESP_PIN, TXESP_PIN);
   
   display.init();
   display.flipScreenVertically();
@@ -253,7 +255,7 @@ void setup() {
   xTaskCreatePinnedToCore( vProducteurTemperature, "ProducteurTemp", 10000, NULL, 1, NULL , 0 ); 
   xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );
   xTaskCreatePinnedToCore( vConsomateur, "Consomateur", 10000, NULL, 1 ,NULL ,  0 );
-  xTaskCreatePinnedToCore(vUARTReceiver, "UARTReceiver", 4096, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(vUARTReceiver, "UARTReceiver", 4096, NULL, 10, NULL, 0);
 
 }
 

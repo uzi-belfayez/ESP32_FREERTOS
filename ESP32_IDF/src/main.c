@@ -19,16 +19,19 @@
 #define UART_NUM UART_NUM_2
 #define BUF_SIZE (128)
 
-#define TXESP_PIN 1
-#define RXESP_PIN 3
-#define UART_ESP UART_NUM_0
+// #define TXESP_PIN 1
+// #define RXESP_PIN 3
+// #define UART_ESP UART_NUM_0
+
+#define PWM_PIN GPIO_NUM_4 
+
+static const char *TAG = "MH-Z19B";
 
 volatile int64_t start_time = 0;
 volatile int64_t end_time = 0;
 volatile bool measurement_done = false;
 bool object_detected = false ;
 
-static const char *TAG = "MH-Z19B";
 
 // Interrupt Service Routine (ISR) for Echo pin (ultrasonic sensor)
 static void IRAM_ATTR echo_isr_handler(void *arg) {
@@ -92,29 +95,71 @@ void hcsr04_task(void *pvParameter) {
 //     }
 // }
 
+// reading CO2 sensor with UART 
+// void co2_task(void *pvParameters) {
+//     uint8_t request[] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79}; 
+//     uint8_t response[9];
+//     char send_buffer[32];  // Buffer to format the string
 
-void co2_task(void *pvParameters) {
-    uint8_t request[] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79}; 
-    uint8_t response[9];
-    char send_buffer[32];  // Buffer to format the string
+//     while (1) {
+//         uart_write_bytes(UART_NUM, (const char*)request, sizeof(request)); 
+//         vTaskDelay(pdMS_TO_TICKS(100)); 
 
+//         int len = uart_read_bytes(UART_NUM, response, sizeof(response), pdMS_TO_TICKS(200));
+//         if (len == 9 && response[0] == 0xFF && response[1] == 0x86) {
+//             int co2_ppm = (response[2] << 8) | response[3]; // Extract CO₂ value
+//             ESP_LOGI(TAG, "CO₂ Concentration: %d ppm", co2_ppm);
+
+//             // Send over UART_ESP
+//             snprintf(send_buffer, sizeof(send_buffer), "CO2:%d ppm\r\n", co2_ppm);
+//             uart_write_bytes(UART_ESP, send_buffer, strlen(send_buffer));
+//         } else {
+//             ESP_LOGW(TAG, "Invalid response");
+//         }
+
+//         vTaskDelay(pdMS_TO_TICKS(4000)); // Wait 4 seconds before next reading
+//     }
+// }
+
+
+// reading CO2 sensor with PWM
+void read_co2_pwm(void *arg) {
     while (1) {
-        uart_write_bytes(UART_NUM, (const char*)request, sizeof(request)); 
-        vTaskDelay(pdMS_TO_TICKS(100)); 
+        uint64_t start_time, high_time, low_time;
 
-        int len = uart_read_bytes(UART_NUM, response, sizeof(response), pdMS_TO_TICKS(200));
-        if (len == 9 && response[0] == 0xFF && response[1] == 0x86) {
-            int co2_ppm = (response[2] << 8) | response[3]; // Extract CO₂ value
+        // Wait for rising edge (HIGH start)
+        while (gpio_get_level(PWM_PIN) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        start_time = esp_timer_get_time();
+
+        // Wait for falling edge (HIGH end)
+        while (gpio_get_level(PWM_PIN) == 1) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        high_time = esp_timer_get_time() - start_time;
+
+        // Wait for rising edge again (LOW end)
+        while (gpio_get_level(PWM_PIN) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        low_time = esp_timer_get_time() - (start_time + high_time);
+
+        // Validate pulse width
+        if (high_time < 2000 || low_time < 2000) {
+            ESP_LOGE(TAG, "Invalid pulse readings: High = %llu us, Low = %llu us", high_time, low_time);
+        } else {
+            // Calculate CO₂ concentration (ppm)
+            int co2_ppm = 2000 * (high_time - 2000) / (high_time + low_time - 4000);
             ESP_LOGI(TAG, "CO₂ Concentration: %d ppm", co2_ppm);
 
-            // Send over UART_ESP
-            snprintf(send_buffer, sizeof(send_buffer), "CO2:%d ppm\r\n", co2_ppm);
-            uart_write_bytes(UART_ESP, send_buffer, strlen(send_buffer));
-        } else {
-            ESP_LOGW(TAG, "Invalid response");
+            // Format and send via UART
+            char uart_msg[64];
+            int len = snprintf(uart_msg, sizeof(uart_msg), "CO2: %d ppm\r\n", co2_ppm);
+            uart_write_bytes(UART_NUM, uart_msg, len);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(4000)); // Wait 4 seconds before next reading
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
@@ -144,6 +189,23 @@ void app_main() {
 
     // ---------------------------------------------- CO2 SENSOR CONFIG -----------------------------------------------
     // UART configuration for the sensor 
+    // const uart_config_t uart_config = {
+    //     .baud_rate = 9600,
+    //     .data_bits = UART_DATA_8_BITS,
+    //     .parity = UART_PARITY_DISABLE,
+    //     .stop_bits = UART_STOP_BITS_1,
+    //     .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    //     .source_clk = UART_SCLK_APB,
+    // };
+    
+    // uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0);
+    // uart_param_config(UART_NUM, &uart_config);
+    // uart_set_pin(UART_NUM, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+
+
+
+    // ---------------------------------------------- SENDING DATA CONFIG -----------------------------------------------
+
     const uart_config_t uart_config = {
         .baud_rate = 9600,
         .data_bits = UART_DATA_8_BITS,
@@ -158,24 +220,9 @@ void app_main() {
     uart_set_pin(UART_NUM, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
 
-
-    // ---------------------------------------------- SENDING DATA CONFIG -----------------------------------------------
-
-    const uart_config_t uart_config_esp = {
-        .baud_rate = 9600,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_APB,
-    };
-
-    uart_driver_install(UART_ESP, BUF_SIZE * 2, 0, 0, NULL, 0);
-    uart_param_config(UART_ESP, &uart_config_esp);
-    uart_set_pin(UART_ESP, TXESP_PIN, RXESP_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-
-
     // Create FreeRTOS Task for CO2 Sensor
-    xTaskCreate(co2_task, "co2_task", 2048, NULL, 5, NULL);
+    //xTaskCreate(co2_task, "co2_task", 2048, NULL, 5, NULL);
+
+    xTaskCreate(read_co2_pwm, "read_co2_pwm", 4096, NULL, 5, NULL);
 
 }
