@@ -150,12 +150,12 @@ void read_co2_pwm(void *arg) {
             ESP_LOGE(TAG, "Invalid pulse readings: High = %llu us, Low = %llu us", high_time, low_time);
         } else {
             // Calculate CO₂ concentration (ppm)
-            int co2_ppm = 2000 * (high_time - 2000) / (high_time + low_time - 4000);
-            ESP_LOGI(TAG, "CO₂ Concentration: %d ppm", co2_ppm);
+            float co2_ppm = 2000 * (high_time - 2000) / (high_time + low_time - 4000);
+            ESP_LOGI(TAG, "CO₂ Concentration: %f ppm", co2_ppm);
 
             // Format and send via UART
             char uart_msg[64];
-            int len = snprintf(uart_msg, sizeof(uart_msg), "CO2: %d ppm\r\n", co2_ppm);
+            int len = snprintf(uart_msg, sizeof(uart_msg), "%f", co2_ppm);
             uart_write_bytes(UART_NUM, uart_msg, len);
         }
 
@@ -186,22 +186,6 @@ void app_main() {
 
     // Create a FreeRTOS Task to Handle Distance Measurement
     xTaskCreate(hcsr04_task, "hcsr04_task", 2048, NULL, 5, NULL);
-
-    // ---------------------------------------------- CO2 SENSOR CONFIG -----------------------------------------------
-    // UART configuration for the sensor 
-    // const uart_config_t uart_config = {
-    //     .baud_rate = 9600,
-    //     .data_bits = UART_DATA_8_BITS,
-    //     .parity = UART_PARITY_DISABLE,
-    //     .stop_bits = UART_STOP_BITS_1,
-    //     .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-    //     .source_clk = UART_SCLK_APB,
-    // };
-    
-    // uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0);
-    // uart_param_config(UART_NUM, &uart_config);
-    // uart_set_pin(UART_NUM, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-
 
 
     // ---------------------------------------------- SENDING DATA CONFIG -----------------------------------------------

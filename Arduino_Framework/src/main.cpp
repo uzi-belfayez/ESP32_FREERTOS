@@ -41,7 +41,7 @@ SemaphoreHandle_t mutex = NULL ;
 
 int table_pointer = 0 ; 
 
-float temp,humidite ;
+float temp, humidite, co2 ;
 
 void update_screen_v1() {
   display.clear(); // Clear previous display
@@ -51,15 +51,19 @@ void update_screen_v1() {
 
   char tempStr[10];
   char humidityStr[10];
+  char co2Str[10];
 
   // Format temperature and humidity
   dtostrf(temp, 4, 1, tempStr);
   dtostrf(humidite, 4, 1, humidityStr);
+  dtostrf(co2, 4, 1, co2Str);
   strcat(tempStr, "°C");
   strcat(humidityStr, "%");
+  strcat(co2Str, "ppm");
 
-  display.drawString(64, 10, "Temp: " + String(tempStr));
-  display.drawString(64, 30, "Hum: " + String(humidityStr));
+  display.drawString(64, 5, "Temp: " + String(tempStr));
+  display.drawString(64, 25, "Hum: " + String(humidityStr));
+  display.drawString(64, 40, "CO2: " + String(co2Str));
 
   display.display(); // Send buffer to screen
 }
@@ -94,7 +98,7 @@ void vProducteurTemperature(void *pvParameters)
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
-        //printf("ProducteurTemperature produced %f \n", temp);
+        printf("ProducteurTemperature produced %.2f \n", temp);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
     }
 }
@@ -128,10 +132,62 @@ void vProducteurHumidite(void *pvParameters)
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
-        //printf("ProducteurHumidité produced %f \n", humidite);
+        printf("ProducteurHumidité produced %.2f \n", humidite);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
     }
 }
+
+
+String input = "";
+
+void vUARTReceiver(void *pvParameters) {
+
+  const char *pcTaskName = "ProducteurCO2";
+  int valueToSend;
+  BaseType_t status;
+  UBaseType_t uxPriority;
+  valueToSend = (int)pvParameters;
+  uxPriority = uxTaskPriorityGet(NULL);
+  TickType_t xLastWakeTime;
+  xLastWakeTime = xTaskGetTickCount();
+
+  mesure_t mesure_container_co2;
+  float co2;
+
+  char incomingByte;
+
+  for (;;) {
+    if (SerialSensor.available()) {
+      input = SerialSensor.readStringUntil('\n');
+      Serial.println("Received: " + input);
+
+      // Parse and process input
+       co2 = input.toFloat();
+       mesure_container_co2.mesure = co2;
+       mesure_container_co2.type_capteur = 'C';
+
+       // Publish to buffer
+       xSemaphoreTake(s1, portMAX_DELAY);
+       xSemaphoreTake(mutex, portMAX_DELAY);
+       tab_mesure[table_pointer] = mesure_container_co2;
+       table_pointer = (table_pointer + 1) % TAILLE_MAX;
+       xSemaphoreGive(mutex);
+       xSemaphoreGive(s2);
+       printf("ProducteurCO2 produced %.2f \n", co2);
+
+    }
+
+
+      // Example: if you want to trigger something based on UART input
+      // if (incomingByte == 'u') {
+      //   update_screen();  // manually update OLED screen
+      // }
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
+  }
+
+  vTaskDelete(NULL);
+}
+
 
 
 void vConsomateur(void *pvParameters)
@@ -153,18 +209,18 @@ void vConsomateur(void *pvParameters)
       xSemaphoreGive(s1); 
       if (current_mesure.type_capteur == 'H') {
         humidite = current_mesure.mesure ; 
-        //printf("Le consomateur a consomé %f de type Humidité \n ",humidite);
+        printf("Le consomateur a consomé %.2f de type Humidité \n ",humidite);
         update_screen_v1();
       }
       else if (current_mesure.type_capteur == 'T'){
         temp = current_mesure.mesure ;
-        //printf("Le consomateur a consomé %f de type temp \n ",temp);
+        printf("Le consomateur a consomé %.2f de type temp \n ",temp);
         update_screen_v1();
       }
-      // else if (current_mesure.type_capteur == 'C'){
-      //   taux_co2 = current_mesure.mesure ; 
-      //   printf("Le consomateur a consomé %d de type C02 \n ",taux_co2);
-      // }
+      else if (current_mesure.type_capteur == 'C'){
+         co2 = current_mesure.mesure ; 
+         printf("Le consomateur a consomé %.2f de type C02 \n ",co2);
+       }
 
       // if (interruptOccurred){
       // display.clear();
@@ -177,29 +233,7 @@ void vConsomateur(void *pvParameters)
   vTaskDelete(NULL); 
 }
 
-String input = "";
 
-void vUARTReceiver(void *pvParameters) {
-  TickType_t xLastWakeTime;
-  xLastWakeTime = xTaskGetTickCount();
-  char incomingByte;
-
-  for (;;) {
-    if (SerialSensor.available()) {
-      input = SerialSensor.readStringUntil('\n');
-      Serial.println("Received: " + input);
-      // Parse and process input
-    }
-
-      // Example: if you want to trigger something based on UART input
-      // if (incomingByte == 'u') {
-      //   update_screen();  // manually update OLED screen
-      // }
-    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
-  }
-
-  vTaskDelete(NULL);
-}
 
 
 void update_screen() {
@@ -254,8 +288,8 @@ void setup() {
 
   xTaskCreatePinnedToCore( vProducteurTemperature, "ProducteurTemp", 10000, NULL, 1, NULL , 0 ); 
   xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );
+  xTaskCreatePinnedToCore(vUARTReceiver, "UARTReceiver", 4096, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore( vConsomateur, "Consomateur", 10000, NULL, 1 ,NULL ,  0 );
-  xTaskCreatePinnedToCore(vUARTReceiver, "UARTReceiver", 4096, NULL, 10, NULL, 0);
 
 }
 
