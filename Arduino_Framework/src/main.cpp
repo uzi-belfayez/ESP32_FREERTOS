@@ -32,7 +32,7 @@ StaticJsonDocument<200> jsonDoc;
 
 HardwareSerial SerialSensor(2);
 
-
+bool user_detected ;
 
 typedef struct {
   float mesure;
@@ -180,35 +180,36 @@ void vUARTReceiver(void *pvParameters) {
   float co2; 
 
   for (;;) {
-      // 1. Handle incoming messages from SerialSensor
+
       if (SerialSensor.available()) {
           String input = SerialSensor.readStringUntil('\n');
           input.trim();
           //Serial.println("Received from Sensor: " + input); 
 
-          if (input == "Object detected at 50 cm!") { // Make sure this string is EXACTLY correct
-              lastProximityTime = millis(); // Reset timeout timer
+          if (input == "Object detected at 50 cm!") { 
+              user_detected = true ;
+              lastProximityTime = millis(); 
               if (!screenOn) {
                   //Serial.println("Presence detected: Screen ON"); // Add debug message
-                  update_screen_v1(); // Turn ON screen and display initial values
+                  update_screen_v1(); 
                   screenOn = true;
               }
           }
-          else if (input.length() > 0 && isDigit(input.charAt(0))) { // Basic check for numeric CO2 data
-              co2 = input.toFloat(); // Read CO2 value
+          else if (input.length() > 0 && isDigit(input.charAt(0))) {
+              user_detected = false ;
+              co2 = input.toFloat();
               mesure_container_co2.mesure = co2;
               mesure_container_co2.type_capteur = 'C';
 
-              // Produce CO2 value to buffer (same as before)
               xSemaphoreTake(s1, portMAX_DELAY);
               xSemaphoreTake(mutex, portMAX_DELAY);
               tab_mesure[table_pointer] = mesure_container_co2;
               table_pointer = (table_pointer + 1) % TAILLE_MAX;
               xSemaphoreGive(mutex);
               xSemaphoreGive(s2);
-              // Use the local co2 variable for this print statement
              // printf("ProducteurCO2 produced %.2f \n", co2);
           }
+          else user_detected = false ;
       }
 
       // 2. Manage Screen State (Timeout Check and Periodic Update)
@@ -219,15 +220,9 @@ void vUARTReceiver(void *pvParameters) {
               shutdown_screen(); 
               screenOn = false;
           } else {
-              // If screen is on and timeout hasn't expired, refresh the display
-              // with the latest values from the global variables (temp, humidite, co2)
-              // which are updated by the vConsomateur task.
               update_screen_v1();
           }
       }
-
-      // 3. Delay task until next execution cycle
-      // This task will check Serial, check screen timeout, and potentially update screen every 250ms
       vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
   }
 
@@ -289,6 +284,7 @@ void vSendWebSocketData(void *pvParameters)
     jsonDoc["temperature"] = temp;
     jsonDoc["humidity"] = humidite;
     jsonDoc["co2"] = co2;
+    jsonDoc["presence"] = user_detected ? "USER DETECTED UNDER 50 cm !" : "USER NOT DETECTED";
 
     String jsonString;
     serializeJson(jsonDoc, jsonString);
