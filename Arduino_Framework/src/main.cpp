@@ -2,6 +2,22 @@
 #include "SSD1306Wire.h"
 #include "images.h"
 #include "DHTesp.h"
+#include <WiFi.h>
+#include <SPIFFS.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+#include <ArduinoJson.h>
+
+// WiFi credentials
+const char* ssid = "Redmi Note 9 Pro";
+const char* password = "3ezdinblid";
+
+// Create AsyncWebServer object on port 80
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+// JSON document for sensor data
+StaticJsonDocument<200> jsonDoc;
 #include <Ticker.h>
 #include <Arduino.h>
 #include <HardwareSerial.h>
@@ -27,9 +43,15 @@ int dhtPin = 18;
 
 DHTesp dht;
 
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    Serial.println("WebSocket client connected");
+  }
+}
+
 void setup_dht() {
   Serial.begin(115200);
-  dht.setup(dhtPin, DHTesp::DHT22); 
+  dht.setup(dhtPin, DHTesp::DHT22);
 }
 
 SSD1306Wire display(0x3c, SDA, SCL);
@@ -248,45 +270,51 @@ void vConsomateur(void *pvParameters)
 
 
 
-void update_screen() {
+Ticker sensorDataTicker;
 
-  display.drawXbm(0, 0, image_width, image_height, sensor_screen_bits);
-  // Convert temperature and humidity to strings
-  char tempStr[8]; // Buffer to hold temperature string
-  char humidityStr[8]; 
-  //char co2Str[8] ;
+void sendSensorData() {
+  jsonDoc.clear();
+  jsonDoc["temperature"] = temp;
+  jsonDoc["humidity"] = humidite;
+  jsonDoc["co2"] = co2;
 
-  //sprintf(co2Str, "%d", taux_co2);
-
-  char ppm[4] = "ppm"; 
-
-  dtostrf(temp, 4, 1, tempStr); // Convert float to string with 1 decimal place
-  dtostrf(humidite, 4, 1, humidityStr); // Convert float to string with 1 decimal place
-  strcat(tempStr, "°C");
-  strcat(humidityStr, "%");
-  display.setFont(ArialMT_Plain_16);
-
-  // Display temperature
-  display.setTextAlignment(TEXT_ALIGN_CENTER);
-  display.drawString(42, 8, tempStr);
-
-  // Display humidity
-  display.setTextAlignment(TEXT_ALIGN_CENTER);
-  display.drawString(42, 40, humidityStr);
-
-  // Display Co2
-  // display.setTextAlignment(TEXT_ALIGN_CENTER);
-  // display.drawString(100, 30, co2Str);
-  // display.setFont(ArialMT_Plain_10);
-  // display.drawString(100, 44, ppm);
-
-  display.display();
+  String jsonString;
+  serializeJson(jsonDoc, jsonString);
+  ws.textAll(jsonString);
 }
-
 
 
 void setup() {
   setup_dht();
+
+  // Initialize SPIFFS
+  if(!SPIFFS.begin(true)) {
+    Serial.println("An error occurred while mounting SPIFFS");
+    return;
+  }
+
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println(WiFi.localIP());
+
+  // Setup WebSocket
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+
+  // Route for root / web page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/index.html", "text/html");
+  });
+
+  // Start server
+  server.begin();
+  
+  // Setup periodic sensor data sending
+  sensorDataTicker.attach(1, sendSensorData); // Send data every 1 second
 
   SerialSensor.begin(9600, SERIAL_8N1, RXESP_PIN, TXESP_PIN);
   
@@ -307,4 +335,4 @@ void setup() {
 
 void loop() {
   vTaskDelay(portMAX_DELAY);  
-} 
+}
