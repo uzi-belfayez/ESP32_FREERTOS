@@ -66,8 +66,8 @@ int table_pointer = 0 ;
 float temp, humidite, co2 ;
 
 void update_screen_v1() {
-  display.displayOn(); // Ensure display is on
-  display.clear(); // Clear previous display
+  display.displayOn(); 
+  display.clear(); 
 
   display.setFont(ArialMT_Plain_16);
   display.setTextAlignment(TEXT_ALIGN_CENTER);
@@ -184,7 +184,7 @@ void vUARTReceiver(void *pvParameters) {
       if (SerialSensor.available()) {
           String input = SerialSensor.readStringUntil('\n');
           input.trim();
-          Serial.println("Received from Sensor: " + input); // More specific Serial print
+          //Serial.println("Received from Sensor: " + input); 
 
           if (input == "Object detected at 50 cm!") { // Make sure this string is EXACTLY correct
               lastProximityTime = millis(); // Reset timeout timer
@@ -278,27 +278,41 @@ void vConsomateur(void *pvParameters)
 
 
 
-Ticker sensorDataTicker;
+void vSendWebSocketData(void *pvParameters)
+{
+  TickType_t xLastWakeTime = xTaskGetTickCount();
 
-void sendSensorData() {
-  jsonDoc.clear();
-  jsonDoc["temperature"] = temp;
-  jsonDoc["humidity"] = humidite;
-  jsonDoc["co2"] = co2;
+  for (;;)
+  {
+    // Assemble JSON message
+    jsonDoc.clear();
+    jsonDoc["temperature"] = temp;
+    jsonDoc["humidity"] = humidite;
+    jsonDoc["co2"] = co2;
 
-  String jsonString;
-  serializeJson(jsonDoc, jsonString);
-  ws.textAll(jsonString);
+    String jsonString;
+    serializeJson(jsonDoc, jsonString);
+
+    // Send via WebSocket
+    ws.textAll(jsonString);
+
+    // Wait for 1 second
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));
+  }
+
+  vTaskDelete(NULL);
 }
 
-
 void setup() {
+  
   setup_dht();
 
   // Initialize SPIFFS
   if(!SPIFFS.begin(true)) {
     Serial.println("An error occurred while mounting SPIFFS");
     return;
+  }else {
+    Serial.println("SPIFFS Mount Successful");
   }
 
   // Connect to Wi-Fi
@@ -316,13 +330,11 @@ void setup() {
   // Route for root / web page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/index.html", "text/html");
+    //request->send(200, "text/plain", "ESP32 Server is OK!");
   });
 
   // Start server
   server.begin();
-  
-  // Setup periodic sensor data sending
-  sensorDataTicker.attach(1, sendSensorData); // Send data every 1 second
 
   SerialSensor.begin(9600, SERIAL_8N1, RXESP_PIN, TXESP_PIN);
   
@@ -338,9 +350,43 @@ void setup() {
   xTaskCreatePinnedToCore( vProducteurHumidite, "ProducteurHumidite", 10000, NULL, 1, NULL , 0 );
   xTaskCreatePinnedToCore(vUARTReceiver, "UARTReceiver", 4096, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore( vConsomateur, "Consomateur", 10000, NULL, 1 ,NULL ,  0 );
+  xTaskCreatePinnedToCore( vSendWebSocketData, "WebSocketSender", 4096, NULL, 1, NULL, 1 );
+  
+
+ /*----------------------- DEBUGGING WEB SERVER -----------------------------------------------------*/
+  // Serial.begin(115200);
+  // Serial.println("\nBooting...");
+
+  
+  // Serial.print("Connecting to WiFi...");
+  // WiFi.begin(ssid, password);
+  // while (WiFi.status() != WL_CONNECTED) {
+  //     delay(500);
+  //     Serial.print(".");
+  // }
+  // Serial.println(" Connected!");
+  // Serial.print("IP Address: ");
+  // Serial.println(WiFi.localIP());
+
+  // // Add heap check
+  // Serial.print("Free Heap: ");
+  // Serial.println(ESP.getFreeHeap());
+
+  
+  // server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+  //     Serial.println("Received HTTP request for /"); // Add log here
+  //     request->send(200, "text/plain", "ESP32 Minimal Server OK!");
+  // });
+
+  // server.begin();
+  // Serial.println("HTTP server started");
+
+  // Serial.println("Setup complete. Minimal server running.");
 
 }
 
 void loop() {
   vTaskDelay(portMAX_DELAY);  
+
+  //delay(1000);
 }
