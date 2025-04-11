@@ -27,10 +27,12 @@
 
 static const char *TAG = "MH-Z19B";
 
+SemaphoreHandle_t uart_mutex;
+
 volatile int64_t start_time = 0;
 volatile int64_t end_time = 0;
 volatile bool measurement_done = false;
-bool object_detected = false ;
+int object_detected = 0 ;
 
 
 // Interrupt Service Routine (ISR) for Echo pin (ultrasonic sensor)
@@ -64,11 +66,18 @@ void hcsr04_task(void *pvParameter) {
             printf("Distance: %.2f cm\n", distance);
 
             if (distance <= DETECTION_DISTANCE) {
-                printf("Object detected at 50 cm!\n");
-                object_detected = true ;
+                const char* output = "Object detected at 50 cm!\n";
+                char uart_msg[64];
+
+                snprintf(uart_msg, sizeof(uart_msg), "%s", output);
+
+                if (xSemaphoreTake(uart_mutex, pdMS_TO_TICKS(100))) {
+                    uart_write_bytes(UART_NUM, uart_msg, strlen(uart_msg));
+                    xSemaphoreGive(uart_mutex);
+                }
             }
         }
-        
+
         vTaskDelay(pdMS_TO_TICKS(500)); // Delay between measurements
     }
 }
@@ -156,7 +165,11 @@ void read_co2_pwm(void *arg) {
             // Format and send via UART
             char uart_msg[64];
             int len = snprintf(uart_msg, sizeof(uart_msg), "%f", co2_ppm);
-            uart_write_bytes(UART_NUM, uart_msg, len);
+            if (xSemaphoreTake(uart_mutex, pdMS_TO_TICKS(100))) {
+                uart_write_bytes(UART_NUM, uart_msg, len);
+                xSemaphoreGive(uart_mutex);
+            }
+            
         }
 
         vTaskDelay(pdMS_TO_TICKS(2000));
@@ -166,6 +179,9 @@ void read_co2_pwm(void *arg) {
 
 
 void app_main() {
+
+    uart_mutex = xSemaphoreCreateMutex();
+
     // ---------------------------------------------- ULTRASONIC SENSOR CONFIG -----------------------------------------------
     // Configure Trigger Pin as Output
     gpio_config_t io_conf = {
