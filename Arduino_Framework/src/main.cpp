@@ -66,7 +66,7 @@ int table_pointer = 0 ;
 float temp, humidite, co2 ;
 
 void update_screen_v1() {
-  display.displayOn();
+  display.displayOn(); // Ensure display is on
   display.clear(); // Clear previous display
 
   display.setFont(ArialMT_Plain_16);
@@ -76,19 +76,20 @@ void update_screen_v1() {
   char humidityStr[10];
   char co2Str[10];
 
-  // Format temperature and humidity
-  dtostrf(temp, 4, 1, tempStr);
+  // Format temperature, humidity, and CO2 using the latest global values
+  dtostrf(temp, 4, 1, tempStr);      
   dtostrf(humidite, 4, 1, humidityStr);
-  dtostrf(co2, 4, 1, co2Str);
+  dtostrf(co2, 4, 1, co2Str); 
   strcat(tempStr, "°C");
   strcat(humidityStr, "%");
   strcat(co2Str, "ppm");
+
 
   display.drawString(64, 5, "Temp: " + String(tempStr));
   display.drawString(64, 25, "Hum: " + String(humidityStr));
   display.drawString(64, 40, "CO2: " + String(co2Str));
 
-  display.display(); // Send buffer to screen
+  display.display(); 
 }
 
 void shutdown_screen() {
@@ -127,7 +128,7 @@ void vProducteurTemperature(void *pvParameters)
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
-        printf("ProducteurTemperature produced %.2f \n", temp);
+        //printf("ProducteurTemperature produced %.2f \n", temp);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
     }
 }
@@ -161,7 +162,7 @@ void vProducteurHumidite(void *pvParameters)
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
-        printf("ProducteurHumidité produced %.2f \n", humidite);
+        //printf("ProducteurHumidité produced %.2f \n", humidite);
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
     }
 }
@@ -174,56 +175,63 @@ bool screenOn = false;
 const unsigned long proximityTimeout = 3000;  // 3 seconds
 
 void vUARTReceiver(void *pvParameters) {
-  const char *pcTaskName = "ProducteurCO2";
-  int valueToSend;
-  BaseType_t status;
-  UBaseType_t uxPriority;
-  valueToSend = (int)pvParameters;
-  uxPriority = uxTaskPriorityGet(NULL);
   TickType_t xLastWakeTime = xTaskGetTickCount();
-
   mesure_t mesure_container_co2;
-  float co2;
+  float co2; 
 
   for (;;) {
-    // 1. Handle incoming messages
-    if (SerialSensor.available()) {
-      String input = SerialSensor.readStringUntil('\n');
-      input.trim();
-      Serial.println("Received: " + input);
+      // 1. Handle incoming messages from SerialSensor
+      if (SerialSensor.available()) {
+          String input = SerialSensor.readStringUntil('\n');
+          input.trim();
+          Serial.println("Received from Sensor: " + input); // More specific Serial print
 
-      if (input == "Object detected at 50 cm!") {
-        lastProximityTime = millis();
-        if (!screenOn) {
-          update_screen_v1();  // turn ON screen
-          screenOn = true;
-        }
-      } 
-      else if (input.length() > 0 && isDigit(input.charAt(0))) {
-        co2 = input.toFloat();
-        mesure_container_co2.mesure = co2;
-        mesure_container_co2.type_capteur = 'C';
+          if (input == "Object detected at 50 cm!") { // Make sure this string is EXACTLY correct
+              lastProximityTime = millis(); // Reset timeout timer
+              if (!screenOn) {
+                  //Serial.println("Presence detected: Screen ON"); // Add debug message
+                  update_screen_v1(); // Turn ON screen and display initial values
+                  screenOn = true;
+              }
+          }
+          else if (input.length() > 0 && isDigit(input.charAt(0))) { // Basic check for numeric CO2 data
+              co2 = input.toFloat(); // Read CO2 value
+              mesure_container_co2.mesure = co2;
+              mesure_container_co2.type_capteur = 'C';
 
-        xSemaphoreTake(s1, portMAX_DELAY);
-        xSemaphoreTake(mutex, portMAX_DELAY);
-        tab_mesure[table_pointer] = mesure_container_co2;
-        table_pointer = (table_pointer + 1) % TAILLE_MAX;
-        xSemaphoreGive(mutex);
-        xSemaphoreGive(s2);
-        printf("ProducteurCO2 produced %.2f \n", co2);
+              // Produce CO2 value to buffer (same as before)
+              xSemaphoreTake(s1, portMAX_DELAY);
+              xSemaphoreTake(mutex, portMAX_DELAY);
+              tab_mesure[table_pointer] = mesure_container_co2;
+              table_pointer = (table_pointer + 1) % TAILLE_MAX;
+              xSemaphoreGive(mutex);
+              xSemaphoreGive(s2);
+              // Use the local co2 variable for this print statement
+             // printf("ProducteurCO2 produced %.2f \n", co2);
+          }
       }
-    }
 
-    // 2. Check timeout to shut down screen
-    if (screenOn && (millis() - lastProximityTime > proximityTimeout)) {
-      shutdown_screen();  // turn OFF screen
-      screenOn = false;
-    }
+      // 2. Manage Screen State (Timeout Check and Periodic Update)
+      if (screenOn) { 
+          // Check if timeout has expired
+          if (millis() - lastProximityTime > proximityTimeout) {
+              //Serial.println("Screen timed out: Screen OFF");
+              shutdown_screen(); 
+              screenOn = false;
+          } else {
+              // If screen is on and timeout hasn't expired, refresh the display
+              // with the latest values from the global variables (temp, humidite, co2)
+              // which are updated by the vConsomateur task.
+              update_screen_v1();
+          }
+      }
 
-    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
+      // 3. Delay task until next execution cycle
+      // This task will check Serial, check screen timeout, and potentially update screen every 250ms
+      vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
   }
 
-  vTaskDelete(NULL);
+  vTaskDelete(NULL); // Should technically never be reached in this loop structure
 }
 
 
@@ -247,18 +255,18 @@ void vConsomateur(void *pvParameters)
       xSemaphoreGive(s1); 
       if (current_mesure.type_capteur == 'H') {
         humidite = current_mesure.mesure ; 
-        printf("Le consomateur a consomé %.2f de type Humidité \n ",humidite);
-        //update_screen_v1();
+        //printf("Le consomateur a consomé %.2f de type Humidité \n ",humidite);
+        
       }
       else if (current_mesure.type_capteur == 'T'){
         temp = current_mesure.mesure ;
-        printf("Le consomateur a consomé %.2f de type temp \n ",temp);
-        //update_screen_v1();
+        //printf("Le consomateur a consomé %.2f de type temp \n ",temp);
+        
       }
       else if (current_mesure.type_capteur == 'C'){
          co2 = current_mesure.mesure ; 
-         printf("Le consomateur a consomé %.2f de type C02 \n ",co2);
-         //update_screen_v1();
+         //printf("Le consomateur a consomé %.2f de type C02 \n ",co2);
+         
        }
 
       vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
