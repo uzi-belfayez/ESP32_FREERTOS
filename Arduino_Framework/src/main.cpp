@@ -1,12 +1,15 @@
 #include <Wire.h>
 #include "SSD1306Wire.h"
-#include "images.h"
 #include "DHTesp.h"
 #include <WiFi.h>
 #include <SPIFFS.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
 #include <ArduinoJson.h>
+#include "icons.h"
+#include <Ticker.h>
+#include <Arduino.h>
+#include <HardwareSerial.h>
 
 // WiFi credentials
 const char* ssid = "Redmi Note 9 Pro";
@@ -18,9 +21,7 @@ AsyncWebSocket ws("/ws");
 
 // JSON document for sensor data
 StaticJsonDocument<200> jsonDoc;
-#include <Ticker.h>
-#include <Arduino.h>
-#include <HardwareSerial.h>
+
 
 
 #define SDA GPIO_NUM_5
@@ -37,7 +38,7 @@ bool user_detected ;
 typedef struct {
   float mesure;
   char type_capteur;
-} mesure_t;
+} mesure;
 
 int dhtPin = 18;
 
@@ -56,7 +57,7 @@ void setup_dht() {
 
 SSD1306Wire display(0x3c, SDA, SCL);
 
-mesure_t tab_mesure[TAILLE_MAX] ; 
+mesure tab_mesure[TAILLE_MAX] ; 
 SemaphoreHandle_t s1 = NULL; 
 SemaphoreHandle_t s2 = NULL; 
 SemaphoreHandle_t mutex = NULL ; 
@@ -65,12 +66,14 @@ int table_pointer = 0 ;
 
 float temp, humidite, co2 ;
 
-void update_screen_v1() {
+
+
+void update_display() {
   display.displayOn(); 
   display.clear(); 
 
   display.setFont(ArialMT_Plain_16);
-  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
 
   char tempStr[10];
   char humidityStr[10];
@@ -84,10 +87,15 @@ void update_screen_v1() {
   strcat(humidityStr, "%");
   strcat(co2Str, "ppm");
 
+  // Draw icons and values
+  display.drawXbm(5, 5, 16, 16, TEMP_ICON);
+  display.drawString(25, 5, String(tempStr));
 
-  display.drawString(64, 5, "Temp: " + String(tempStr));
-  display.drawString(64, 25, "Hum: " + String(humidityStr));
-  display.drawString(64, 40, "CO2: " + String(co2Str));
+  display.drawXbm(5, 25, 16, 16, HUMIDITY_ICON);
+  display.drawString(25, 25, String(humidityStr));
+
+  display.drawXbm(5, 45, 16, 16, CO2_ICON);
+  display.drawString(25, 45, String(co2Str));
 
   display.display(); 
 }
@@ -111,20 +119,20 @@ void vProducteurTemperature(void *pvParameters)
     xLastWakeTime = xTaskGetTickCount();
 
     float temp;
-    mesure_t mesure_container_temp;
+    mesure mesure_temp;
 
     for (;;)
     {
         // Read Temperature
         TempAndHumidity data = dht.getTempAndHumidity();
         temp = data.temperature ;
-        mesure_container_temp.mesure = temp;
-        mesure_container_temp.type_capteur = 'T';
+        mesure_temp.mesure = temp;
+        mesure_temp.type_capteur = 'T';
 
         // Publish to buffer
         xSemaphoreTake(s1, portMAX_DELAY);
         xSemaphoreTake(mutex, portMAX_DELAY);
-        tab_mesure[table_pointer] = mesure_container_temp;
+        tab_mesure[table_pointer] = mesure_temp;
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
@@ -145,20 +153,20 @@ void vProducteurHumidite(void *pvParameters)
     xLastWakeTime = xTaskGetTickCount();
 
     float humidite;
-    mesure_t mesure_container_humidite;
+    mesure mesure_humidite;
 
     for (;;)
     {
         // Read humidity
         TempAndHumidity data = dht.getTempAndHumidity();
         humidite = data.humidity ;
-        mesure_container_humidite.mesure = humidite;
-        mesure_container_humidite.type_capteur = 'H';
+        mesure_humidite.mesure = humidite;
+        mesure_humidite.type_capteur = 'H';
 
         // Publish to buffer
         xSemaphoreTake(s1, portMAX_DELAY);
         xSemaphoreTake(mutex, portMAX_DELAY);
-        tab_mesure[table_pointer] = mesure_container_humidite;
+        tab_mesure[table_pointer] = mesure_humidite;
         table_pointer = (table_pointer + 1) % TAILLE_MAX;
         xSemaphoreGive(mutex);
         xSemaphoreGive(s2);
@@ -176,7 +184,7 @@ const unsigned long proximityTimeout = 3000;  // 3 seconds
 
 void vUARTReceiver(void *pvParameters) {
   TickType_t xLastWakeTime = xTaskGetTickCount();
-  mesure_t mesure_container_co2;
+  mesure mesure_co2;
   float co2; 
 
   for (;;) {
@@ -191,19 +199,19 @@ void vUARTReceiver(void *pvParameters) {
               lastProximityTime = millis(); 
               if (!screenOn) {
                   //Serial.println("Presence detected: Screen ON"); // Add debug message
-                  update_screen_v1(); 
+                  update_display(); 
                   screenOn = true;
               }
           }
           else if (input.length() > 0 && isDigit(input.charAt(0))) {
               user_detected = false ;
               co2 = input.toFloat();
-              mesure_container_co2.mesure = co2;
-              mesure_container_co2.type_capteur = 'C';
+              mesure_co2.mesure = co2;
+              mesure_co2.type_capteur = 'C';
 
               xSemaphoreTake(s1, portMAX_DELAY);
               xSemaphoreTake(mutex, portMAX_DELAY);
-              tab_mesure[table_pointer] = mesure_container_co2;
+              tab_mesure[table_pointer] = mesure_co2;
               table_pointer = (table_pointer + 1) % TAILLE_MAX;
               xSemaphoreGive(mutex);
               xSemaphoreGive(s2);
@@ -220,13 +228,13 @@ void vUARTReceiver(void *pvParameters) {
               shutdown_screen(); 
               screenOn = false;
           } else {
-              update_screen_v1();
+              update_display();
           }
       }
       vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(250));
   }
 
-  vTaskDelete(NULL); // Should technically never be reached in this loop structure
+  vTaskDelete(NULL); 
 }
 
 
@@ -237,7 +245,7 @@ void vConsomateur(void *pvParameters)
   UBaseType_t uxPriority;
   uxPriority = uxTaskPriorityGet(NULL);
   int i = 0;
-  mesure_t current_mesure ;
+  mesure current_mesure ;
   TickType_t xLastWakeTime;
   xLastWakeTime = xTaskGetTickCount();
   for (;;)
@@ -284,7 +292,7 @@ void vSendWebSocketData(void *pvParameters)
     jsonDoc["temperature"] = temp;
     jsonDoc["humidity"] = humidite;
     jsonDoc["co2"] = co2;
-    jsonDoc["presence"] = user_detected ? "USER DETECTED UNDER 50 cm !" : "USER NOT DETECTED";
+    jsonDoc["presence"] = user_detected ? "USER DETECTED !" : "USER NOT DETECTED";
 
     String jsonString;
     serializeJson(jsonDoc, jsonString);
@@ -292,7 +300,6 @@ void vSendWebSocketData(void *pvParameters)
     // Send via WebSocket
     ws.textAll(jsonString);
 
-    // Wait for 1 second
     vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));
   }
 
@@ -305,10 +312,10 @@ void setup() {
 
   // Initialize SPIFFS
   if(!SPIFFS.begin(true)) {
-    Serial.println("An error occurred while mounting SPIFFS");
+    Serial.println("An error occurred while mounting SPIFFS/n");
     return;
   }else {
-    Serial.println("SPIFFS Mount Successful");
+    Serial.println("SPIFFS Mount Successful/n");
   }
 
   // Connect to Wi-Fi
@@ -332,11 +339,14 @@ void setup() {
   // Start server
   server.begin();
 
+  //uart 
   SerialSensor.begin(9600, SERIAL_8N1, RXESP_PIN, TXESP_PIN);
   
+  //oled display
   display.init();
   display.flipScreenVertically();
   display.setFont(ArialMT_Plain_10);
+
 
   s1 = xSemaphoreCreateCounting( TAILLE_MAX, TAILLE_MAX );
   s2 = xSemaphoreCreateCounting( TAILLE_MAX, 0 );
