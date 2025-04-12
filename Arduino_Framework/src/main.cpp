@@ -72,12 +72,13 @@ void update_display() {
   display.displayOn(); 
   display.clear(); 
 
-  display.setFont(ArialMT_Plain_16);
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
 
   char tempStr[10];
   char humidityStr[10];
   char co2Str[10];
+
+  //draw the image in icons.h
+  display.drawXbm(0, 0, LOGOS_width, LOGOS_height, LOGOS);
 
   // Format temperature, humidity, and CO2 using the latest global values
   dtostrf(temp, 4, 1, tempStr);      
@@ -87,15 +88,17 @@ void update_display() {
   strcat(humidityStr, "%");
   strcat(co2Str, "ppm");
 
-  // Draw icons and values
-  display.drawXbm(5, 5, 16, 16, TEMP_ICON);
-  display.drawString(25, 5, String(tempStr));
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.drawString(42, 8, tempStr);
 
-  display.drawXbm(5, 25, 16, 16, HUMIDITY_ICON);
-  display.drawString(25, 25, String(humidityStr));
+  // Display humidity
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.drawString(42, 40, humidityStr);
 
-  display.drawXbm(5, 45, 16, 16, CO2_ICON);
-  display.drawString(25, 45, String(co2Str));
+  // Display Co2
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.drawString(100, 30, co2Str);
+  display.setFont(ArialMT_Plain_10);
 
   display.display(); 
 }
