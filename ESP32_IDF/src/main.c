@@ -38,9 +38,9 @@ int object_detected = 0 ;
 // Interrupt Service Routine (ISR) for Echo pin (ultrasonic sensor)
 static void IRAM_ATTR echo_isr_handler(void *arg) {
     if (gpio_get_level(ECHO_PIN) == 1) {
-        start_time = esp_timer_get_time(); // Start timing on rising edge
+        start_time = esp_timer_get_time(); 
     } else {
-        end_time = esp_timer_get_time(); // Stop timing on falling edge
+        end_time = esp_timer_get_time(); 
         measurement_done = true;
     }
 }
@@ -78,7 +78,7 @@ void hcsr04_task(void *pvParameter) {
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(500)); // Delay between measurements
+        vTaskDelay(pdMS_TO_TICKS(500)); 
     }
 }
 
@@ -100,7 +100,7 @@ void hcsr04_task(void *pvParameter) {
 //             ESP_LOGW(TAG, "Invalid response");
 //         }
 
-//         vTaskDelay(pdMS_TO_TICKS(4000)); // Wait 4 seconds before next reading
+//         vTaskDelay(pdMS_TO_TICKS(4000)); 
 //     }
 // }
 
@@ -108,7 +108,7 @@ void hcsr04_task(void *pvParameter) {
 // void co2_task(void *pvParameters) {
 //     uint8_t request[] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79}; 
 //     uint8_t response[9];
-//     char send_buffer[32];  // Buffer to format the string
+//     char send_buffer[32];  
 
 //     while (1) {
 //         uart_write_bytes(UART_NUM, (const char*)request, sizeof(request)); 
@@ -126,7 +126,7 @@ void hcsr04_task(void *pvParameter) {
 //             ESP_LOGW(TAG, "Invalid response");
 //         }
 
-//         vTaskDelay(pdMS_TO_TICKS(4000)); // Wait 4 seconds before next reading
+//         vTaskDelay(pdMS_TO_TICKS(4000)); 
 //     }
 // }
 
@@ -136,13 +136,13 @@ void read_co2_pwm(void *arg) {
     while (1) {
         uint64_t start_time, high_time, low_time;
 
-        // Wait for rising edge (HIGH start)
+        // Wait for rising edge
         while (gpio_get_level(PWM_PIN) == 0) {
             vTaskDelay(pdMS_TO_TICKS(1));
         }
         start_time = esp_timer_get_time();
 
-        // Wait for falling edge (HIGH end)
+        // Wait for falling edge
         while (gpio_get_level(PWM_PIN) == 1) {
             vTaskDelay(pdMS_TO_TICKS(1));
         }
@@ -158,11 +158,11 @@ void read_co2_pwm(void *arg) {
         if (high_time < 2000 || low_time < 2000) {
             ESP_LOGE(TAG, "Invalid pulse readings: High = %llu us, Low = %llu us", high_time, low_time);
         } else {
-            // Calculate CO₂ concentration (ppm)
+            // Calculate CO2 concentration 
             float co2_ppm = 2000 * (high_time - 2000) / (high_time + low_time - 4000);
             ESP_LOGI(TAG, "CO₂ Concentration: %f ppm", co2_ppm);
 
-            // Format and send via UART
+            // Format and send 
             char uart_msg[64];
             int len = snprintf(uart_msg, sizeof(uart_msg), "%f", co2_ppm);
             if (xSemaphoreTake(uart_mutex, pdMS_TO_TICKS(100))) {
