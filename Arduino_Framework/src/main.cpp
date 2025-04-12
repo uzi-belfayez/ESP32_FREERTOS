@@ -103,6 +103,34 @@ void update_display() {
   display.display(); 
 }
 
+void update_display_v1() {
+  display.displayOn(); // Ensure display is on
+  display.clear(); 
+  display.displayOn(); 
+  display.clear(); 
+
+  display.setFont(ArialMT_Plain_16);
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+
+  char tempStr[10];
+  char humidityStr[10];
+  char co2Str[10];
+
+  dtostrf(temp, 4, 1, tempStr);      
+  dtostrf(humidite, 4, 1, humidityStr);
+  dtostrf(co2, 4, 1, co2Str); 
+  strcat(tempStr, "°C");
+  strcat(humidityStr, "%");
+  strcat(co2Str, "ppm");
+
+
+  display.drawString(64, 5, "Temp: " + String(tempStr));
+  display.drawString(64, 25, "Hum: " + String(humidityStr));
+  display.drawString(64, 40, "CO2: " + String(co2Str));
+
+  display.display(); 
+}
+
 void shutdown_screen() {
   display.clear();            
   display.display();          
