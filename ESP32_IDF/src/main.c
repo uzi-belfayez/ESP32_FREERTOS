@@ -63,7 +63,7 @@ void hcsr04_task(void *pvParameter) {
             int64_t duration = end_time - start_time;
             float distance = (duration * SOUND_SPEED) / 2;
 
-            printf("Distance: %.2f cm\n", distance);
+            //printf("Distance: %.2f cm\n", distance);
 
             if (distance <= DETECTION_DISTANCE) {
                 const char* output = "Object detected at 50 cm!\n";
@@ -132,7 +132,7 @@ void hcsr04_task(void *pvParameter) {
 
 
 // reading CO2 sensor with PWM
-void read_co2_pwm(void *arg) {
+void read_co2_pwm_task(void *arg) {
     while (1) {
         uint64_t start_time, high_time, low_time;
 
@@ -223,6 +223,6 @@ void app_main() {
     // Create FreeRTOS Task for CO2 Sensor
     //xTaskCreate(co2_task, "co2_task", 2048, NULL, 5, NULL);
 
-    xTaskCreate(read_co2_pwm, "read_co2_pwm", 4096, NULL, 5, NULL);
+    xTaskCreate(read_co2_pwm_task, "read_co2_pwm", 4096, NULL, 5, NULL);
 
 }
